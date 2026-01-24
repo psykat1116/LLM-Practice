@@ -1,0 +1,10 @@
+ROUGE Scores:
+rouge1: 0.3537
+rouge2: 0.1299
+rougeL: 0.2211
+rougeLsum: 0.2864
+
+BERTScore:
+Precision: 0.8649
+Recall:    0.8775
+F1:        0.8711
