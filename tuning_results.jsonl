@@ -1,0 +1,27 @@
+{"max_new_tokens": 96, "temperature": 0.3, "top_p": 0.9, "rougeL": 0.2323640172075449}
+{"max_new_tokens": 96, "temperature": 0.3, "top_p": 0.7, "rougeL": 0.2290209951575305}
+{"max_new_tokens": 96, "temperature": 0.3, "top_p": 0.8, "rougeL": 0.23359240110659663} // Best Result
+{"max_new_tokens": 96, "temperature": 0.2, "top_p": 0.9, "rougeL": 0.2335274200386249}
+{"max_new_tokens": 64, "temperature": 0.3, "top_p": 0.9, "rougeL": 0.20791386164589787}
+{"max_new_tokens": 64, "temperature": 0.3, "top_p": 0.8, "rougeL": 0.21059762131624374}
+{"max_new_tokens": 80, "temperature": 0.1, "top_p": 0.8, "rougeL": 0.2270156462879852}
+{"max_new_tokens": 80, "temperature": 0.1, "top_p": 0.7, "rougeL": 0.2300999317637221}
+{"max_new_tokens": 80, "temperature": 0.1, "top_p": 0.9, "rougeL": 0.22494929169760408}
+{"max_new_tokens": 64, "temperature": 0.3, "top_p": 0.7, "rougeL": 0.2083304304936284}
+{"max_new_tokens": 64, "temperature": 0.2, "top_p": 0.8, "rougeL": 0.20843108297836518}
+{"max_new_tokens": 64, "temperature": 0.1, "top_p": 0.7, "rougeL": 0.2118276778109202}
+{"max_new_tokens": 64, "temperature": 0.2, "top_p": 0.7, "rougeL": 0.20941075476879267}
+{"max_new_tokens": 64, "temperature": 0.1, "top_p": 0.8, "rougeL": 0.21102766350654015}
+{"max_new_tokens": 64, "temperature": 0.2, "top_p": 0.9, "rougeL": 0.20983651610826243}
+{"max_new_tokens": 64, "temperature": 0.1, "top_p": 0.9, "rougeL": 0.2095844447408702}
+{"max_new_tokens": 80, "temperature": 0.2, "top_p": 0.7, "rougeL": 0.22624181416484632}
+{"max_new_tokens": 80, "temperature": 0.2, "top_p": 0.9, "rougeL": 0.2230167987563731}
+{"max_new_tokens": 80, "temperature": 0.3, "top_p": 0.8, "rougeL": 0.22041468748458481}
+{"max_new_tokens": 80, "temperature": 0.3, "top_p": 0.9, "rougeL": 0.22382100661878432}
+{"max_new_tokens": 80, "temperature": 0.3, "top_p": 0.7, "rougeL": 0.22380616269696077}
+{"max_new_tokens": 80, "temperature": 0.2, "top_p": 0.8, "rougeL": 0.22564842923771863}
+{"max_new_tokens": 96, "temperature": 0.1, "top_p": 0.8, "rougeL": 0.2323364539349576}
+{"max_new_tokens": 96, "temperature": 0.2, "top_p": 0.7, "rougeL": 0.23160470690807813}
+{"max_new_tokens": 96, "temperature": 0.1, "top_p": 0.7, "rougeL": 0.23275862059136443}
+{"max_new_tokens": 96, "temperature": 0.1, "top_p": 0.9, "rougeL": 0.23307690816770646}
+{"max_new_tokens": 96, "temperature": 0.2, "top_p": 0.8, "rougeL": 0.23158941319470627}
