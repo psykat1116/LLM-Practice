@@ -137,255 +137,146 @@ pip install huggingface_hub
   print(f"Indices saved to {OUTPUT_DIR}")
   ```
 
-## Find Max Token Size
-
-- Find max number of token size which is near multiple of 8
-  ```python
-  import random
-  import numpy as np
-  from datasets import load_from_disk
-  from transformers import AutoTokenizer
-
-  BASE_DIR = "/home"
-  DATA_DIR = f"{BASE_DIR}/datasets/cnn_dailymail"
-  MODEL_DIR = f"{BASE_DIR}/models/Llama-3.2-3B-Instruct"
-
-  SEED = 42
-  VAL_SAMPLES = 100
-  random.seed(SEED)
-
-  dataset = load_from_disk(DATA_DIR)["test"]
-  tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-  val_indices = random.sample(range(len(dataset)), VAL_SAMPLES)
-
-  def round_to_multiple_of_8(x):
-      return int(round(x / 8) * 8)
-
-  lengths = []
-  for idx in val_indices:
-      ref = dataset[idx]["highlights"]
-      token_len = len(tokenizer(ref)["input_ids"])
-      lengths.append(token_len)
-
-  p50 = round_to_multiple_of_8(np.percentile(lengths, 50))
-  p75 = round_to_multiple_of_8(np.percentile(lengths, 75))
-  p90 = round_to_multiple_of_8(np.percentile(lengths, 90))
-
-  print("MAX_NEW_TOKENS candidates (rounded to /8):")
-  print("50th percentile:", p50)
-  print("75th percentile:", p75)
-  print("90th percentile:", p90)
-  ```
-
-## Hyperparameter Tuning
-
-- Take all 27 combinations of max_token_size, temperature, top_p find the best based upon RougeL Score metrics
-  ```python
-  import json
-  import torch
-  import argparse
-  import numpy as np
-  from pathlib import Path
-  from datasets import load_from_disk
-  from rouge_score import rouge_scorer
-  from transformers import AutoTokenizer, AutoModelForCausalLM
-
-  parser = argparse.ArgumentParser()
-  parser.add_argument("--max_new_tokens", type=int, required=True)
-  parser.add_argument("--temperature", type=float, required=True)
-  parser.add_argument("--top_p", type=float, required=True)
-  args = parser.parse_args()
-
-  BASE_DIR = "/home"
-  DATA_DIR = f"{BASE_DIR}/datasets/cnn_dailymail"
-  MODEL_DIR = f"{BASE_DIR}/models/Llama-3.2-3B-Instruct"
-  INDEX_DIR = f"{BASE_DIR}/indices/validation_indices.json"
-  RESULT_FILE = f"{BASE_DIR}/outputs/tuning_results.jsonl"
-
-  Path(f"{BASE_DIR}/outputs").mkdir(exist_ok=True)
-  dataset = load_from_disk(DATA_DIR)["test"]
-
-  SEED = 42
-  VAL_SAMPLES = 100
-  np.random.seed(SEED)
-  torch.manual_seed(SEED)
-
-  with open(INDEX_DIR, "r") as f:
-      val_indices = json.load(f)
-
-  tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-  tokenizer.pad_token = tokenizer.eos_token
-  scorer = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
-  model = AutoModelForCausalLM.from_pretrained(
-      MODEL_DIR,
-      torch_dtype=torch.float16,
-      device_map="auto",
-  )
-
-  model.eval()
-
-  def generate_summary(article):
-      messages = [
-          {
-              "role": "system",
-              "content": "You are a summarization engine. Output ONLY the summary text."
-          },
-          {
-              "role": "user",
-              "content": (
-                  "Summarize the following news article in 3–4 sentences.\n\n"
-                  f"{article}"
-              )
-          }
-      ]
-
-      input_ids = tokenizer.apply_chat_template(
-          messages,
-          return_tensors="pt"
-      ).to(model.device)
-
-      with torch.no_grad():
-          output_ids = model.generate(
-              input_ids=input_ids,
-              max_new_tokens=args.max_new_tokens,
-              do_sample=True,
-              temperature=args.temperature,
-              top_p=args.top_p,
-              pad_token_id=tokenizer.eos_token_id
-          )
-
-      gen_tokens = output_ids[0][input_ids.shape[-1]:]
-      return tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
-
-  rouge_sum = 0.0
-
-  for idx in val_indices:
-      article = dataset[idx]["article"]
-      reference = dataset[idx]["highlights"]
-
-      summary = generate_summary(article)
-      rouge_sum += scorer.score(reference, summary)["rougeL"].fmeasure
-
-  rouge_avg = rouge_sum / VAL_SAMPLES
-
-  with open(RESULT_FILE, "a") as f:
-      f.write(json.dumps({
-          "max_new_tokens": args.max_new_tokens,
-          "temperature": args.temperature,
-          "top_p": args.top_p,
-          "rougeL": rouge_avg
-      }) + "\n")
-
-  print("ROUGE-L:", rouge_avg)
-  ```
-
-- Script For Running 27 jobs in parallel in Server
-  ```bash
-    #!/bin/bash
-    #SBATCH --job-name=llama-tune
-    #SBATCH --array=0-26
-    #SBATCH --ntasks=1
-    #SBATCH --output=logs/output_%j_%a.txt
-    #SBATCH --error=logs/error_%j_%a.txt
-    #SBATCH --partition=gpu_l40
-    #SBATCH --cpus-per-task=4
-    #SBATCH --mem=16G
-    #SBATCH --time=8:00:00
-
-    source ~/.bashrc
-    conda activate llama
-
-    PARAMS=$(sed -n "$((SLURM_ARRAY_TASK_ID+1))p" params.txt)
-
-    MAX_NEW_TOKENS=$(echo $PARAMS | awk '{print $1}')
-    TEMP=$(echo $PARAMS | awk '{print $2}')
-    TOP_P=$(echo $PARAMS | awk '{print $3}')
-
-    python tune.py \
-      --max_new_tokens $MAX_NEW_TOKENS \
-      --temperature $TEMP \
-      --top_p $TOP_P
-  ```
-
 ## Text Summarization
 
 - Summarize 1000 random data from dataset and summarize them to a 3-4 Sentence summarization.
   ```python
   import json
-  import torch
-  import random
-  from pathlib import Path
-  from datasets import load_from_disk
-  from transformers import AutoTokenizer, AutoModelForCausalLM
-  
-  BASE_DIR = "/home"
-  DATA_DIR = f"{BASE_DIR}/datasets/cnn_dailymail"
-  INDEX_DIR = f"{BASE_DIR}/indices/test_indices.json"
-  MODEL_DIR = f"{BASE_DIR}/models/Llama-3.2-3B-Instruct"
-  OUTPUT_FILE = f"{BASE_DIR}/outputs/cnn_llama_inference.jsonl"
-  Path(f"{BASE_DIR}/outputs").mkdir(exist_ok=True)
-  
-  SEED = 42
-  random.seed(SEED)
-  
-  dataset = load_from_disk(DATA_DIR)["test"]
-  with open(INDEX_DIR, "r") as f:
-      indices = json.load(f)
-  
-  tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
-  model = AutoModelForCausalLM.from_pretrained(
-      MODEL_DIR,
-      dtype = torch.float16,
-      device_map = "auto",
-  )
-  model.eval()
-  
-  with open(OUTPUT_FILE, "w") as f:
-      for idx in indices:
-          article = dataset[idx]["article"]
-          messages = [
-              {
-                  "role": "system",
-                  "content": (
-                      "You are a summarization engine. "
-                      "Output ONLY the summary text. "
-                      "Do not add introductions, role names, or explanations."
-                  )
-              },
-              {
-                  "role": "user",
-                  "content": (
-                      "Summarize the following news article in 3–4 sentences.\n\n"
-                      f"{article}"
-                  )
-              }
-          ]
-  
-          inputs = tokenizer.apply_chat_template(
-              messages,
-              return_tensors = "pt"
-          ).to(model.device)
-  
-          # Keep the best hyper parameter
-          with torch.no_grad():
-              outputs = model.generate(
-                  inputs,
-                  max_new_tokens = 96,
-                  do_sample = True,
-                  temperature = 0.3,
-                  top_p = 0.8
-              )
-  
-          gen_tokens = outputs[0][inputs.shape[-1]:]
-          summary = tokenizer.decode(gen_tokens, skip_special_tokens = True).strip()
-  
-          f.write(json.dumps({
-              "id": idx,
-              "summary": summary
-          }) + "\n")
-  
-  print("Inference complete.")
-  print("Saved to:", OUTPUT_FILE)
+    import torch
+    import random
+    import numpy as np
+    from pathlib import Path
+    from datasets import load_from_disk
+    from sklearn.metrics.pairwise import cosine_similarity
+    from sklearn.feature_extraction.text import TfidfVectorizer
+    from transformers import AutoTokenizer, AutoModelForCausalLM
+
+    BASE_DIR   = "/home"
+    OUTPUT_DIR = Path(f"{BASE_DIR}/outputs")
+    DATA_DIR   = f"{BASE_DIR}/datasets/cnn_dailymail"
+    INDEX_DIR  = f"{BASE_DIR}/indices/test_indices.json"
+    MODEL_DIR  = f"{BASE_DIR}/models/Llama-3.2-3B-Instruct"
+    OUTPUT_DIR.mkdir(exist_ok=True)
+
+    K_SHOTS       = 3
+    SEED          = 42
+    STRATEGIES    = ["random", "similar"]
+
+    random.seed(SEED)
+    np.random.seed(SEED)
+
+    print("Loading dataset …")
+    full_dataset = load_from_disk(DATA_DIR)
+    test_dataset  = full_dataset["test"]
+    train_dataset = full_dataset["train"]
+
+    with open(INDEX_DIR, "r") as f:
+        test_indices = json.load(f)
+
+    train_articles   = train_dataset["article"]
+    train_highlights = train_dataset["highlights"]
+
+    vectorizer    = TfidfVectorizer(max_features=20_000, sublinear_tf=True)
+    train_tfidf   = vectorizer.fit_transform(train_articles)
+
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_DIR)
+    model = AutoModelForCausalLM.from_pretrained(
+        MODEL_DIR,
+        torch_dtype=torch.float16,
+        device_map="auto",
+    )
+    model.eval()
+
+    def sample_random(test_idx: int, k: int) -> list[int]:
+        rng = random.Random(SEED + test_idx)
+        pool = list(range(len(train_articles)))
+        return rng.sample(pool, k)
+
+    def sample_similar(test_article: str, k: int) -> list[int]:
+        test_vec = vectorizer.transform([test_article])
+        sims     = cosine_similarity(test_vec, train_tfidf)[0]
+        top_k    = np.argsort(sims)[::-1][:k]
+        return top_k.tolist()
+
+    SYSTEM_PROMPT = (
+        "You are a summarization engine. "
+        "Output ONLY the summary text. "
+        "Do not add introductions, role names, or explanations."
+    )
+
+    def build_messages(test_article: str, demo_indices: list[int]) -> list[dict]:
+        messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+
+        for di in demo_indices:
+            demo_article  = train_articles[di]
+            demo_summary  = train_highlights[di]
+            messages.append({
+                "role": "user",
+                "content": (
+                    "Summarize the following news article in 3–4 sentences.\n\n"
+                    f"{demo_article}"
+                )
+            })
+            messages.append({
+                "role": "assistant",
+                "content": demo_summary
+            })
+
+        messages.append({
+            "role": "user",
+            "content": (
+                "Summarize the following news article in 3–4 sentences.\n\n"
+                f"{test_article}"
+            )
+        })
+
+        return messages
+
+    for strategy in STRATEGIES:
+        output_file = OUTPUT_DIR/f"cnn_llama_icl_{strategy}.jsonl"
+        sampler     = sample_random if strategy == "random" else sample_similar
+
+        print(f"\nRunning {strategy.upper()} {K_SHOTS}-shot ICL → {output_file}")
+        with open(output_file, "w") as f:
+            for step, idx in enumerate(test_indices, 1):
+                article = test_dataset[idx]["article"]
+
+                if strategy == "random":
+                    demo_idxs = sampler(idx, K_SHOTS)
+                else:
+                    demo_idxs = sampler(article, K_SHOTS)
+
+                messages = build_messages(article, demo_idxs)
+                inputs = tokenizer.apply_chat_template(
+                    messages,
+                    return_tensors="pt",
+                    add_generation_prompt=True,
+                ).to(model.device)
+
+                with torch.no_grad():
+                    outputs = model.generate(
+                        inputs,
+                        top_p = 0.8,
+                        do_sample = True,
+                        temperature = 0.3,
+                        max_new_tokens = 96,
+                    )
+
+                gen_tokens = outputs[0][inputs.shape[-1]:]
+                summary    = tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
+
+                record = {
+                    "id":           idx,
+                    "strategy":     strategy,
+                    "demo_indices": demo_idxs,
+                    "summary":      summary,
+                }
+                f.write(json.dumps(record, indent=4) + "\n")
+
+                if step % 50 == 0:
+                    print(f"  [{strategy}] {step}/{len(test_indices)} done")
+
+        print(f"  Saved to {output_file}")
   ```
 
 ## Evaluation Script
@@ -393,54 +284,102 @@ pip install huggingface_hub
 - Evaluation of system generated summaries using BERTScore and ROUGE metric.
   ```python
   import json
-  import evaluate
-  from datasets import load_from_disk
+    import evaluate
+    from datasets import load_from_disk
 
-  BASE_DIR = "/home"
-  DATA_DIR = f"{BASE_DIR}/datasets/cnn_dailymail"
-  PRED_FILE = f"{BASE_DIR}/outputs/cnn_llama_inference.jsonl"
+    BASE_DIR = "/home"
+    DATA_DIR = f"{BASE_DIR}/datasets/cnn_dailymail"
 
-  references = []
-  predictions = []
-  dataset = load_from_disk(DATA_DIR)["test"]
+    PRED_FILES = {
+        "icl_random":  f"{BASE_DIR}/outputs/cnn_llama_icl_random.jsonl",
+        "icl_similar": f"{BASE_DIR}/outputs/cnn_llama_icl_similar.jsonl",
+    }
 
-  with open(PRED_FILE, "r") as f:
-  	for line in f:
-  		obj = json.loads(line)
-  		predictions.append(obj["summary"])
-  		references.append(dataset[obj["id"]]["highlights"])
+    print("Loading dataset ...")
+    dataset = load_from_disk(DATA_DIR)["test"]
 
-  rouge = evaluate.load("rouge")
-  rouge_scores = rouge.compute(predictions = predictions, references = references)
+    rouge     = evaluate.load("rouge")
+    bertscore = evaluate.load("bertscore")
 
-  bertscore = evaluate.load("bertscore")
-  bert_scores = bertscore.compute(
-  	predictions = predictions,
-  	references = references,
-  	lang = "en"
-  )
+    for strategy, pred_file in PRED_FILES.items():
+        print(f"\n{'=' * 50}")
+        print(f"  Strategy: {strategy}")
+        print(f"{'=' * 50}")
 
-  print("ROUGE Scores:")
-  for k, v in rouge_scores.items():
-  	print(f"{k}: {v:.4f}")
+        references  = []
+        predictions = []
+        with open(pred_file, "r") as f:
+            for line in f:
+                obj  = json.loads(line)
+                pred = obj["summary"].strip()
+                ref  = dataset[obj["id"]]["highlights"].strip()
+                if pred:
+                    predictions.append(pred)
+                    references.append(ref)
 
-  print("\nBERTScore:")
-  print(f"Precision: {sum(bert_scores['precision'])/len(bert_scores['precision']):.4f}")
-  print(f"Recall:    {sum(bert_scores['recall'])/len(bert_scores['recall']):.4f}")
-  print(f"F1:        {sum(bert_scores['f1'])/len(bert_scores['f1']):.4f}")
+        print(f"Loaded {len(predictions)} samples.\n")
+        rouge_scores = rouge.compute(
+            predictions=predictions,
+            references=references,
+            use_stemmer=True,
+        )
+
+        print("ROUGE Scores:")
+        for k, v in rouge_scores.items():
+            print(f"  {k:10s}: {v:.4f}")
+
+        print("\nBERT Scores:")
+        bert_scores = bertscore.compute(
+            predictions=predictions,
+            references=references,
+            lang="en",
+        )
+
+        precision = sum(bert_scores["precision"]) / len(bert_scores["precision"])
+        recall    = sum(bert_scores["recall"]) / len(bert_scores["recall"])
+        f1        = sum(bert_scores["f1"]) / len(bert_scores["f1"])
+        print(f"  Precision: {precision:.4f}")
+        print(f"  Recall:    {recall:.4f}")
+        print(f"  F1:        {f1:.4f}")
+
+    print(f"\n{'=' * 50}")
+    print("Evaluation complete.")
   ```
 
 ## Evaluation Result
 
 ```bash
-ROUGE Scores:
-rouge1: 0.3795
-rouge2: 0.1449
-rougeL: 0.2391
-rougeLsum: 0.3077
+==================================================
+  Strategy: icl_random
+==================================================
+Loaded 1000 samples.
 
-BERTScore:
-Precision: 0.8699
-Recall:    0.8731
-F1:        0.8714
+ROUGE Scores:
+  rouge1    : 0.3943
+  rouge2    : 0.1497
+  rougeL    : 0.2491
+  rougeLsum : 0.3502
+
+BERT Scores:
+  Precision: 0.8767
+  Recall:    0.8764
+  F1:        0.8764
+
+==================================================
+  Strategy: icl_similar
+==================================================
+Loaded 1000 samples.
+
+ROUGE Scores:
+  rouge1    : 0.4013
+  rouge2    : 0.1557
+  rougeL    : 0.2562
+  rougeLsum : 0.3602
+
+BERT Scores:
+  Precision: 0.8786
+  Recall:    0.8774
+  F1:        0.8779
+
+==================================================
 ```
