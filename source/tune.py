@@ -75,7 +75,6 @@ def generate_summary(article):
     return tokenizer.decode(gen_tokens, skip_special_tokens=True).strip()
 
 rouge_sum = 0.0
-
 for idx in val_indices:
     article = dataset[idx]["article"]
     reference = dataset[idx]["highlights"]
@@ -84,7 +83,6 @@ for idx in val_indices:
     rouge_sum += scorer.score(reference, summary)["rougeL"].fmeasure
 
 rouge_avg = rouge_sum / VAL_SAMPLES
-
 with open(RESULT_FILE, "a") as f:
     f.write(json.dumps({
         "max_new_tokens": args.max_new_tokens,
